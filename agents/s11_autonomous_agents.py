@@ -37,7 +37,6 @@ Key insight: "The agent finds work itself."
 
 import json
 import os
-import subprocess
 import threading
 import time
 import uuid
@@ -45,12 +44,12 @@ from pathlib import Path
 
 from anthropic import Anthropic
 from dotenv import load_dotenv
+from tools import WORKDIR, run_bash, run_read, run_write, run_edit
 
 load_dotenv(override=True)
 if os.getenv("ANTHROPIC_BASE_URL"):
     os.environ.pop("ANTHROPIC_AUTH_TOKEN", None)
 
-WORKDIR = Path.cwd()
 client = Anthropic(base_url=os.getenv("ANTHROPIC_BASE_URL"))
 MODEL = os.environ["MODEL_ID"]
 TEAM_DIR = WORKDIR / ".team"
@@ -303,15 +302,14 @@ class TeammateManager:
             self._set_status(name, "working")
 
     def _exec(self, sender: str, tool_name: str, args: dict) -> str:
-        # these base tools are unchanged from s02
         if tool_name == "bash":
-            return _run_bash(args["command"])
+            return run_bash(args["command"])
         if tool_name == "read_file":
-            return _run_read(args["path"])
+            return run_read(args["path"])
         if tool_name == "write_file":
-            return _run_write(args["path"], args["content"])
+            return run_write(args["path"], args["content"])
         if tool_name == "edit_file":
-            return _run_edit(args["path"], args["old_text"], args["new_text"])
+            return run_edit(args["path"], args["old_text"], args["new_text"])
         if tool_name == "send_message":
             return BUS.send(sender, args["to"], args["content"], args.get("msg_type", "message"))
         if tool_name == "read_inbox":
@@ -341,7 +339,6 @@ class TeammateManager:
         return f"Unknown tool: {tool_name}"
 
     def _teammate_tools(self) -> list:
-        # these base tools are unchanged from s02
         return [
             {"name": "bash", "description": "Run a shell command.",
              "input_schema": {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]}},
@@ -380,61 +377,6 @@ class TeammateManager:
 TEAM = TeammateManager(TEAM_DIR)
 
 
-# -- Base tool implementations (these base tools are unchanged from s02) --
-def _safe_path(p: str) -> Path:
-    path = (WORKDIR / p).resolve()
-    if not path.is_relative_to(WORKDIR):
-        raise ValueError(f"Path escapes workspace: {p}")
-    return path
-
-
-def _run_bash(command: str) -> str:
-    dangerous = ["rm -rf /", "sudo", "shutdown", "reboot"]
-    if any(d in command for d in dangerous):
-        return "Error: Dangerous command blocked"
-    try:
-        r = subprocess.run(
-            command, shell=True, cwd=WORKDIR,
-            capture_output=True, text=True, timeout=120,
-        )
-        out = (r.stdout + r.stderr).strip()
-        return out[:50000] if out else "(no output)"
-    except subprocess.TimeoutExpired:
-        return "Error: Timeout (120s)"
-
-
-def _run_read(path: str, limit: int = None) -> str:
-    try:
-        lines = _safe_path(path).read_text().splitlines()
-        if limit and limit < len(lines):
-            lines = lines[:limit] + [f"... ({len(lines) - limit} more)"]
-        return "\n".join(lines)[:50000]
-    except Exception as e:
-        return f"Error: {e}"
-
-
-def _run_write(path: str, content: str) -> str:
-    try:
-        fp = _safe_path(path)
-        fp.parent.mkdir(parents=True, exist_ok=True)
-        fp.write_text(content)
-        return f"Wrote {len(content)} bytes"
-    except Exception as e:
-        return f"Error: {e}"
-
-
-def _run_edit(path: str, old_text: str, new_text: str) -> str:
-    try:
-        fp = _safe_path(path)
-        c = fp.read_text()
-        if old_text not in c:
-            return f"Error: Text not found in {path}"
-        fp.write_text(c.replace(old_text, new_text, 1))
-        return f"Edited {path}"
-    except Exception as e:
-        return f"Error: {e}"
-
-
 # -- Lead-specific protocol handlers --
 def handle_shutdown_request(teammate: str) -> str:
     req_id = str(uuid.uuid4())[:8]
@@ -468,10 +410,10 @@ def _check_shutdown_status(request_id: str) -> str:
 
 # -- Lead tool dispatch (14 tools) --
 TOOL_HANDLERS = {
-    "bash":              lambda **kw: _run_bash(kw["command"]),
-    "read_file":         lambda **kw: _run_read(kw["path"], kw.get("limit")),
-    "write_file":        lambda **kw: _run_write(kw["path"], kw["content"]),
-    "edit_file":         lambda **kw: _run_edit(kw["path"], kw["old_text"], kw["new_text"]),
+    "bash":              lambda **kw: run_bash(kw["command"]),
+    "read_file":         lambda **kw: run_read(kw["path"], kw.get("limit")),
+    "write_file":        lambda **kw: run_write(kw["path"], kw["content"]),
+    "edit_file":         lambda **kw: run_edit(kw["path"], kw["old_text"], kw["new_text"]),
     "spawn_teammate":    lambda **kw: TEAM.spawn(kw["name"], kw["role"], kw["prompt"]),
     "list_teammates":    lambda **kw: TEAM.list_all(),
     "send_message":      lambda **kw: BUS.send("lead", kw["to"], kw["content"], kw.get("msg_type", "message")),
@@ -484,7 +426,6 @@ TOOL_HANDLERS = {
     "claim_task":        lambda **kw: claim_task(kw["task_id"], "lead"),
 }
 
-# these base tools are unchanged from s02
 TOOLS = [
     {"name": "bash", "description": "Run a shell command.",
      "input_schema": {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]}},
