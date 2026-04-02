@@ -45,6 +45,7 @@ from pathlib import Path
 from anthropic import Anthropic
 from dotenv import load_dotenv
 from tools import WORKDIR, run_bash, run_read, run_write, run_edit
+from utils import print_messages, VALID_MSG_TYPES
 
 load_dotenv(override=True)
 if os.getenv("ANTHROPIC_BASE_URL"):
@@ -61,13 +62,6 @@ IDLE_TIMEOUT = 60
 
 SYSTEM = f"You are a team lead at {WORKDIR}. Teammates are autonomous -- they find work themselves."
 
-VALID_MSG_TYPES = {
-    "message",
-    "broadcast",
-    "shutdown_request",
-    "shutdown_response",
-    "plan_approval_response",
-}
 
 # -- Request trackers --
 shutdown_requests = {}
@@ -253,7 +247,7 @@ class TeammateManager:
                             output = "Entering idle phase. Will poll for new tasks."
                         else:
                             output = self._exec(name, block.name, block.input)
-                        print(f"  [{name}] {block.name}: {str(output)[:120]}")
+                        print(f"teammate_loop_tool_use:[{name}] {block.name}: {str(output)[:120]}")
                         results.append({
                             "type": "tool_result",
                             "tool_use_id": block.id,
@@ -348,14 +342,17 @@ class TeammateManager:
              "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]}},
             {"name": "edit_file", "description": "Replace exact text in file.",
              "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "old_text": {"type": "string"}, "new_text": {"type": "string"}}, "required": ["path", "old_text", "new_text"]}},
+
             {"name": "send_message", "description": "Send message to a teammate.",
              "input_schema": {"type": "object", "properties": {"to": {"type": "string"}, "content": {"type": "string"}, "msg_type": {"type": "string", "enum": list(VALID_MSG_TYPES)}}, "required": ["to", "content"]}},
             {"name": "read_inbox", "description": "Read and drain your inbox.",
              "input_schema": {"type": "object", "properties": {}}},
+
             {"name": "shutdown_response", "description": "Respond to a shutdown request.",
              "input_schema": {"type": "object", "properties": {"request_id": {"type": "string"}, "approve": {"type": "boolean"}, "reason": {"type": "string"}}, "required": ["request_id", "approve"]}},
             {"name": "plan_approval", "description": "Submit a plan for lead approval.",
              "input_schema": {"type": "object", "properties": {"plan": {"type": "string"}}, "required": ["plan"]}},
+
             {"name": "idle", "description": "Signal that you have no more work. Enters idle polling phase.",
              "input_schema": {"type": "object", "properties": {}}},
             {"name": "claim_task", "description": "Claim a task from the task board by ID.",
@@ -383,8 +380,11 @@ def handle_shutdown_request(teammate: str) -> str:
     with _tracker_lock:
         shutdown_requests[req_id] = {"target": teammate, "status": "pending"}
     BUS.send(
-        "lead", teammate, "Please shut down gracefully.",
-        "shutdown_request", {"request_id": req_id},
+        sender="lead", 
+        to=teammate, 
+        content="Please shut down gracefully.", 
+        msg_type="shutdown_request", 
+        extra={"request_id": req_id}
     )
     return f"Shutdown request {req_id} sent to '{teammate}'"
 
@@ -397,8 +397,11 @@ def handle_plan_review(request_id: str, approve: bool, feedback: str = "") -> st
     with _tracker_lock:
         req["status"] = "approved" if approve else "rejected"
     BUS.send(
-        "lead", req["from"], feedback, "plan_approval_response",
-        {"request_id": request_id, "approve": approve, "feedback": feedback},
+        sender="lead", 
+        to=req["from"], 
+        content=feedback, 
+        msg_type="plan_approval_response",
+        extra={"request_id": request_id, "approve": approve, "feedback": feedback},
     )
     return f"Plan {req['status']} for '{req['from']}'"
 
@@ -435,6 +438,7 @@ TOOLS = [
      "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]}},
     {"name": "edit_file", "description": "Replace exact text in file.",
      "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "old_text": {"type": "string"}, "new_text": {"type": "string"}}, "required": ["path", "old_text", "new_text"]}},
+
     {"name": "spawn_teammate", "description": "Spawn an autonomous teammate.",
      "input_schema": {"type": "object", "properties": {"name": {"type": "string"}, "role": {"type": "string"}, "prompt": {"type": "string"}}, "required": ["name", "role", "prompt"]}},
     {"name": "list_teammates", "description": "List all teammates.",
@@ -445,12 +449,14 @@ TOOLS = [
      "input_schema": {"type": "object", "properties": {}}},
     {"name": "broadcast", "description": "Send a message to all teammates.",
      "input_schema": {"type": "object", "properties": {"content": {"type": "string"}}, "required": ["content"]}},
+
     {"name": "shutdown_request", "description": "Request a teammate to shut down.",
      "input_schema": {"type": "object", "properties": {"teammate": {"type": "string"}}, "required": ["teammate"]}},
     {"name": "shutdown_response", "description": "Check shutdown request status.",
      "input_schema": {"type": "object", "properties": {"request_id": {"type": "string"}}, "required": ["request_id"]}},
     {"name": "plan_approval", "description": "Approve or reject a teammate's plan.",
      "input_schema": {"type": "object", "properties": {"request_id": {"type": "string"}, "approve": {"type": "boolean"}, "feedback": {"type": "string"}}, "required": ["request_id", "approve"]}},
+
     {"name": "idle", "description": "Enter idle state (for lead -- rarely used).",
      "input_schema": {"type": "object", "properties": {}}},
     {"name": "claim_task", "description": "Claim a task from the board by ID.",
@@ -484,8 +490,7 @@ def agent_loop(messages: list):
                     output = handler(**block.input) if handler else f"Unknown tool: {block.name}"
                 except Exception as e:
                     output = f"Error: {e}"
-                print(f"> {block.name}:")
-                print(str(output)[:200])
+                print(f"agent_loop_tool_use:[{block.name}]: {str(output)[:200]}")
                 results.append({
                     "type": "tool_result",
                     "tool_use_id": block.id,

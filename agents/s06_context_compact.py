@@ -42,6 +42,7 @@ from pathlib import Path
 from anthropic import Anthropic
 from dotenv import load_dotenv
 from tools import WORKDIR, run_bash, run_read, run_write, run_edit
+from utils import print_messages
 
 load_dotenv(override=True)
 
@@ -149,6 +150,7 @@ TOOLS = [
 def agent_loop(messages: list):
     while True:
         # Layer 1: micro_compact before each LLM call
+        print_messages(messages, title="micro_compact")
         micro_compact(messages)
         # Layer 2: auto_compact if token estimate exceeds threshold
         if estimate_tokens(messages) > THRESHOLD:

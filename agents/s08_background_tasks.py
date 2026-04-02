@@ -34,6 +34,7 @@ from pathlib import Path
 from anthropic import Anthropic
 from dotenv import load_dotenv
 from tools import WORKDIR, run_bash, run_read, run_write, run_edit
+from utils import print_messages
 
 load_dotenv(override=True)
 
@@ -138,6 +139,7 @@ TOOLS = [
 
 def agent_loop(messages: list):
     while True:
+        print_messages(messages, title="agent_loop")
         # Drain background notifications and inject as system message before LLM call
         notifs = BG.drain_notifications()
         if notifs and messages:

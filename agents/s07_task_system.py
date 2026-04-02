@@ -29,6 +29,7 @@ from pathlib import Path
 from anthropic import Anthropic
 from dotenv import load_dotenv
 from tools import WORKDIR, run_bash, run_read, run_write, run_edit
+from utils import print_messages
 
 load_dotenv(override=True)
 
@@ -153,6 +154,7 @@ TOOLS = [
 
 def agent_loop(messages: list):
     while True:
+        print_messages(messages, title="agent_loop")
         response = client.messages.create(
             model=MODEL, system=SYSTEM, messages=messages,
             tools=TOOLS, max_tokens=8000,

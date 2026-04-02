@@ -39,7 +39,8 @@ from pathlib import Path
 
 from anthropic import Anthropic
 from dotenv import load_dotenv
-from tools import WORKDIR, safe_path, run_bash, run_read, run_write, run_edit
+from tools import WORKDIR, safe_path, detect_repo_root, run_bash, run_read, run_write, run_edit
+from utils import print_messages
 
 load_dotenv(override=True)
 
@@ -48,25 +49,6 @@ if os.getenv("ANTHROPIC_BASE_URL"):
 
 client = Anthropic(base_url=os.getenv("ANTHROPIC_BASE_URL"))
 MODEL = os.environ["MODEL_ID"]
-
-
-def detect_repo_root(cwd: Path) -> Path | None:
-    """Return git repo root if cwd is inside a repo, else None."""
-    try:
-        r = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            cwd=cwd,
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if r.returncode != 0:
-            return None
-        root = Path(r.stdout.strip())
-        return root if root.exists() else None
-    except Exception:
-        return None
-
 
 REPO_ROOT = detect_repo_root(WORKDIR) or WORKDIR
 
@@ -217,10 +199,6 @@ class TaskManager:
         return "\n".join(lines)
 
 
-TASKS = TaskManager(REPO_ROOT / ".tasks")
-EVENTS = EventBus(REPO_ROOT / ".worktrees" / "events.jsonl")
-
-
 # -- WorktreeManager: create/list/run/remove git worktrees + lifecycle index --
 class WorktreeManager:
     def __init__(self, repo_root: Path, tasks: TaskManager, events: EventBus):
@@ -293,7 +271,10 @@ class WorktreeManager:
         self.events.emit(
             "worktree.create.before",
             task={"id": task_id} if task_id is not None else {},
-            worktree={"name": name, "base_ref": base_ref},
+            worktree={
+                "name": name, 
+                "base_ref": base_ref
+            },
         )
         try:
             self._run_git(["worktree", "add", "-b", branch, str(path), base_ref])
@@ -329,7 +310,10 @@ class WorktreeManager:
             self.events.emit(
                 "worktree.create.failed",
                 task={"id": task_id} if task_id is not None else {},
-                worktree={"name": name, "base_ref": base_ref},
+                worktree={
+                    "name": name, 
+                    "base_ref": base_ref
+                },
                 error=str(e),
             )
             raise
@@ -399,7 +383,10 @@ class WorktreeManager:
         self.events.emit(
             "worktree.remove.before",
             task={"id": wt.get("task_id")} if wt.get("task_id") is not None else {},
-            worktree={"name": name, "path": wt.get("path")},
+            worktree={
+                "name": name, 
+                "path": wt.get("path")
+            },
         )
         try:
             args = ["worktree", "remove"]
@@ -433,14 +420,21 @@ class WorktreeManager:
             self.events.emit(
                 "worktree.remove.after",
                 task={"id": wt.get("task_id")} if wt.get("task_id") is not None else {},
-                worktree={"name": name, "path": wt.get("path"), "status": "removed"},
+                worktree={
+                    "name": name, 
+                    "path": wt.get("path"), 
+                    "status": "removed"
+                },
             )
             return f"Removed worktree '{name}'"
         except Exception as e:
             self.events.emit(
                 "worktree.remove.failed",
                 task={"id": wt.get("task_id")} if wt.get("task_id") is not None else {},
-                worktree={"name": name, "path": wt.get("path")},
+                worktree={
+                    "name": name, 
+                    "path": wt.get("path")
+                },
                 error=str(e),
             )
             raise
@@ -471,26 +465,32 @@ class WorktreeManager:
         return json.dumps(kept, indent=2) if kept else f"Error: Unknown worktree '{name}'"
 
 
+EVENTS = EventBus(REPO_ROOT / ".worktrees" / "events.jsonl")
+TASKS = TaskManager(REPO_ROOT / ".tasks")
+
 WORKTREES = WorktreeManager(REPO_ROOT, TASKS, EVENTS)
 
 
 TOOL_HANDLERS = {
-    "bash": lambda **kw: run_bash(kw["command"]),
-    "read_file": lambda **kw: run_read(kw["path"], kw.get("limit")),
-    "write_file": lambda **kw: run_write(kw["path"], kw["content"]),
-    "edit_file": lambda **kw: run_edit(kw["path"], kw["old_text"], kw["new_text"]),
-    "task_create": lambda **kw: TASKS.create(kw["subject"], kw.get("description", "")),
-    "task_list": lambda **kw: TASKS.list_all(),
-    "task_get": lambda **kw: TASKS.get(kw["task_id"]),
-    "task_update": lambda **kw: TASKS.update(kw["task_id"], kw.get("status"), kw.get("owner")),
-    "task_bind_worktree": lambda **kw: TASKS.bind_worktree(kw["task_id"], kw["worktree"], kw.get("owner", "")),
-    "worktree_create": lambda **kw: WORKTREES.create(kw["name"], kw.get("task_id"), kw.get("base_ref", "HEAD")),
-    "worktree_list": lambda **kw: WORKTREES.list_all(),
-    "worktree_status": lambda **kw: WORKTREES.status(kw["name"]),
-    "worktree_run": lambda **kw: WORKTREES.run(kw["name"], kw["command"]),
-    "worktree_keep": lambda **kw: WORKTREES.keep(kw["name"]),
-    "worktree_remove": lambda **kw: WORKTREES.remove(kw["name"], kw.get("force", False), kw.get("complete_task", False)),
-    "worktree_events": lambda **kw: EVENTS.list_recent(kw.get("limit", 20)),
+    "bash":                 lambda **kw: run_bash(kw["command"]),
+    "read_file":            lambda **kw: run_read(kw["path"], kw.get("limit")),
+    "write_file":           lambda **kw: run_write(kw["path"], kw["content"]),
+    "edit_file":            lambda **kw: run_edit(kw["path"], kw["old_text"], kw["new_text"]),
+
+    "task_create":          lambda **kw: TASKS.create(kw["subject"], kw.get("description", "")),
+    "task_list":            lambda **kw: TASKS.list_all(),
+    "task_get":             lambda **kw: TASKS.get(kw["task_id"]),
+    "task_update":          lambda **kw: TASKS.update(kw["task_id"], kw.get("status"), kw.get("owner")),
+    "task_bind_worktree":   lambda **kw: TASKS.bind_worktree(kw["task_id"], kw["worktree"], kw.get("owner", "")),
+
+    "worktree_create":      lambda **kw: WORKTREES.create(kw["name"], kw.get("task_id"), kw.get("base_ref", "HEAD")),
+    "worktree_list":        lambda **kw: WORKTREES.list_all(),
+    "worktree_status":      lambda **kw: WORKTREES.status(kw["name"]),
+    "worktree_run":         lambda **kw: WORKTREES.run(kw["name"], kw["command"]),
+    "worktree_keep":        lambda **kw: WORKTREES.keep(kw["name"]),
+    "worktree_remove":      lambda **kw: WORKTREES.remove(kw["name"], kw.get("force", False), kw.get("complete_task", False)),
+
+    "worktree_events":      lambda **kw: EVENTS.list_recent(kw.get("limit", 20)),
 }
 
 TOOLS = [
@@ -668,7 +668,9 @@ TOOLS = [
 
 
 def agent_loop(messages: list):
+    turn = 1
     while True:
+        print_messages(messages, title=f"agent_loop: {turn}")
         response = client.messages.create(
             model=MODEL,
             system=SYSTEM,
@@ -688,8 +690,7 @@ def agent_loop(messages: list):
                     output = handler(**block.input) if handler else f"Unknown tool: {block.name}"
                 except Exception as e:
                     output = f"Error: {e}"
-                print(f"> {block.name}:")
-                print(str(output)[:200])
+                print(f">agent_loop_tool_use:[{block.name}]: {str(output)[:200]}")
                 results.append(
                     {
                         "type": "tool_result",

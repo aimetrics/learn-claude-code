@@ -1,5 +1,13 @@
 """Shared debug utilities for agent scripts."""
 
+VALID_MSG_TYPES = {
+    "message",
+    "broadcast",
+    "shutdown_request",
+    "shutdown_response",
+    "plan_approval_response",
+}
+
 
 def print_messages(messages: list, title: str = "messages") -> None:
     """Pretty-print the full message history.

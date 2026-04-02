@@ -57,6 +57,7 @@ from pathlib import Path
 from anthropic import Anthropic
 from dotenv import load_dotenv
 from tools import WORKDIR, run_bash, run_read, run_write, run_edit
+from utils import print_messages
 
 load_dotenv(override=True)
 if os.getenv("ANTHROPIC_BASE_URL"):
@@ -181,7 +182,8 @@ class TeammateManager:
         messages = [{"role": "user", "content": prompt}]
         tools = self._teammate_tools()
         should_exit = False
-        for _ in range(50):
+        for turn in range(7):
+            print_messages(messages, title=f"teammate_loop: {name}-{turn}")
             inbox = BUS.read_inbox(name)
             for msg in inbox:
                 messages.append({"role": "user", "content": json.dumps(msg)})
@@ -204,7 +206,7 @@ class TeammateManager:
             for block in response.content:
                 if block.type == "tool_use":
                     output = self._exec(name, block.name, block.input)
-                    print(f"  [{name}] {block.name}: {str(output)[:120]}")
+                    print(f"  _teammate_loop_tool_use:[{name}] {block.name}: {str(output)[:120]}")
                     results.append({
                         "type": "tool_result",
                         "tool_use_id": block.id,
@@ -366,6 +368,7 @@ TOOLS = [
 
 def agent_loop(messages: list):
     while True:
+        print_messages(messages, title="agent_loop")
         inbox = BUS.read_inbox("lead")
         if inbox:
             messages.append({
@@ -390,8 +393,7 @@ def agent_loop(messages: list):
                     output = handler(**block.input) if handler else f"Unknown tool: {block.name}"
                 except Exception as e:
                     output = f"Error: {e}"
-                print(f"> {block.name}:")
-                print(str(output)[:200])
+                print(f"> agent_loop_tool_use:[{block.name}]: {str(output)[:200]}")
                 results.append({
                     "type": "tool_result",
                     "tool_use_id": block.id,
