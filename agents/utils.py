@@ -46,9 +46,9 @@ def print_messages(messages: list, title: str = "messages") -> None:
                     print(f"    {GRAY}💭 thinking: {text}{RESET}")
 
                 elif btype == "text":
-                    text = getattr(block, "text", "")
+                    text = getattr(block, "text", None) or block.get("text", "")
                     print(f"    \033[97m💬 text:{RESET}")
-                    for line in text[:400].splitlines():
+                    for line in text[0:400].splitlines():
                         print(f"       {line}")
 
                 elif btype == "tool_use":
@@ -62,7 +62,7 @@ def print_messages(messages: list, title: str = "messages") -> None:
                     print(f"    \033[35m📤 tool_result[…{tid}]: {out}{RESET}")
 
                 else:
-                    print(f"    {GRAY}? {btype}: {str(block)[:150]}{RESET}")
+                    print(f"    {GRAY}? {btype}: {str(block)[:400]}{RESET}")
 
         print()  # blank line between messages
 

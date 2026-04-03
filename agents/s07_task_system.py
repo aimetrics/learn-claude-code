@@ -126,6 +126,7 @@ TOOL_HANDLERS = {
     "read_file":   lambda **kw: run_read(kw["path"], kw.get("limit")),
     "write_file":  lambda **kw: run_write(kw["path"], kw["content"]),
     "edit_file":   lambda **kw: run_edit(kw["path"], kw["old_text"], kw["new_text"]),
+
     "task_create": lambda **kw: TASKS.create(kw["subject"], kw.get("description", "")),
     "task_update": lambda **kw: TASKS.update(kw["task_id"], kw.get("status"), kw.get("addBlockedBy"), kw.get("removeBlockedBy")),
     "task_list":   lambda **kw: TASKS.list_all(),
@@ -141,6 +142,7 @@ TOOLS = [
      "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]}},
     {"name": "edit_file", "description": "Replace exact text in file.",
      "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "old_text": {"type": "string"}, "new_text": {"type": "string"}}, "required": ["path", "old_text", "new_text"]}},
+
     {"name": "task_create", "description": "Create a new task.",
      "input_schema": {"type": "object", "properties": {"subject": {"type": "string"}, "description": {"type": "string"}}, "required": ["subject"]}},
     {"name": "task_update", "description": "Update a task's status or dependencies.",
@@ -153,8 +155,10 @@ TOOLS = [
 
 
 def agent_loop(messages: list):
+    turn = 1
     while True:
-        print_messages(messages, title="agent_loop")
+        print_messages(messages, title=f"agent_loop: {turn}")
+        turn += 1
         response = client.messages.create(
             model=MODEL, system=SYSTEM, messages=messages,
             tools=TOOLS, max_tokens=8000,
@@ -170,10 +174,10 @@ def agent_loop(messages: list):
                     output = handler(**block.input) if handler else f"Unknown tool: {block.name}"
                 except Exception as e:
                     output = f"Error: {e}"
-                print(f"> {block.name}:")
-                print(str(output)[:200])
+                print(f"> agent_loop_tool_use:[{block.name}]: {str(output)[:200]}")
                 results.append({"type": "tool_result", "tool_use_id": block.id, "content": str(output)})
         messages.append({"role": "user", "content": results})
+    print_messages(messages, title=f"agent_loop: {turn}")
 
 
 if __name__ == "__main__":

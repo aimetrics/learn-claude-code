@@ -28,6 +28,7 @@ import os
 from anthropic import Anthropic
 from dotenv import load_dotenv
 from tools import WORKDIR, run_bash, run_read, run_write, run_edit
+from utils import print_messages
 
 load_dotenv(override=True)
 
@@ -91,7 +92,10 @@ PARENT_TOOLS = CHILD_TOOLS + [
 
 
 def agent_loop(messages: list):
+    turn = 1
     while True:
+        print_messages(messages, title=f"agent_loop: {turn}")
+        turn += 1
         response = client.messages.create(
             model=MODEL, system=SYSTEM, messages=messages,
             tools=PARENT_TOOLS, max_tokens=8000,
@@ -112,6 +116,7 @@ def agent_loop(messages: list):
                 print(f"  {str(output)[:200]}")
                 results.append({"type": "tool_result", "tool_use_id": block.id, "content": str(output)})
         messages.append({"role": "user", "content": results})
+    print_messages(messages, title=f"agent_loop after: {turn}")
 
 
 if __name__ == "__main__":

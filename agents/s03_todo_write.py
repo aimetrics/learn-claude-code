@@ -32,7 +32,7 @@ import os
 from anthropic import Anthropic
 from dotenv import load_dotenv
 from tools import WORKDIR, run_bash, run_read, run_write, run_edit
-
+from utils import print_messages
 load_dotenv(override=True)
 
 if os.getenv("ANTHROPIC_BASE_URL"):
@@ -112,8 +112,11 @@ TOOLS = [
 # -- Agent loop with nag reminder injection --
 def agent_loop(messages: list):
     rounds_since_todo = 0
+    turn = 1
     while True:
         # Nag reminder is injected below, alongside tool results
+        print_messages(messages, title=f"agent_loop before: {turn}")
+        turn += 1
         response = client.messages.create(
             model=MODEL, system=SYSTEM, messages=messages,
             tools=TOOLS, max_tokens=8000,
@@ -136,9 +139,11 @@ def agent_loop(messages: list):
                 if block.name == "todo":
                     used_todo = True
         rounds_since_todo = 0 if used_todo else rounds_since_todo + 1
-        if rounds_since_todo >= 3:
+        if rounds_since_todo >= 2:
             results.append({"type": "text", "text": "<reminder>Update your todos.</reminder>"})
         messages.append({"role": "user", "content": results})
+        print_messages(messages, title=f"agent_loop after: {turn}")
+        print(f'message_after: {messages}')
 
 
 if __name__ == "__main__":
