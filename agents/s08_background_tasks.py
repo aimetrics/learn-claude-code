@@ -50,8 +50,8 @@ SYSTEM = f"You are a coding agent at {WORKDIR}. Use background_run for long-runn
 # -- BackgroundManager: threaded execution + notification queue --
 class BackgroundManager:
     def __init__(self):
-        self.tasks = {}  # task_id -> {status, result, command}
-        self._notification_queue = []  # completed task results
+        self.tasks = {}                 # task_id -> {status, result, command}
+        self._notification_queue = []   # completed task results
         self._lock = threading.Lock()
 
     def run(self, command: str) -> str:
@@ -138,8 +138,10 @@ TOOLS = [
 
 
 def agent_loop(messages: list):
+    turn = 1
     while True:
-        print_messages(messages, title="agent_loop")
+        print_messages(messages, title=f"agent_loop: {turn}")
+        turn += 1
         # Drain background notifications and inject as system message before LLM call
         notifs = BG.drain_notifications()
         if notifs and messages:
@@ -166,6 +168,7 @@ def agent_loop(messages: list):
                 print(str(output)[:200])
                 results.append({"type": "tool_result", "tool_use_id": block.id, "content": str(output)})
         messages.append({"role": "user", "content": results})
+    print_messages(messages, title=f"agent_loop: {turn}")
 
 
 if __name__ == "__main__":

@@ -206,7 +206,7 @@ class TeammateManager:
             for block in response.content:
                 if block.type == "tool_use":
                     output = self._exec(name, block.name, block.input)
-                    print(f"  _teammate_loop_tool_use:[{name}] {block.name}: {str(output)[:120]}")
+                    print(f"  _teammate_loop_tool_use-{turn}:[{name}] {block.name}: {str(output)[:120]}")
                     results.append({
                         "type": "tool_result",
                         "tool_use_id": block.id,
@@ -215,6 +215,7 @@ class TeammateManager:
                     if block.name == "shutdown_response" and block.input.get("approve"):
                         should_exit = True
             messages.append({"role": "user", "content": results})
+        print_messages(messages, title=f"teammate_loop: {name}-{turn}")
         member = self._find_member(name)
         if member:
             member["status"] = "shutdown" if should_exit else "idle"
@@ -297,8 +298,11 @@ def handle_shutdown_request(teammate: str) -> str:
     with _tracker_lock:
         shutdown_requests[req_id] = {"target": teammate, "status": "pending"}
     BUS.send(
-        "lead", teammate, "Please shut down gracefully.",
-        "shutdown_request", {"request_id": req_id},
+        sender="lead",
+        to=teammate,
+        content="Please shut down gracefully.",
+        msg_type="shutdown_request",
+        extra={"request_id": req_id},
     )
     return f"Shutdown request {req_id} sent to '{teammate}' (status: pending)"
 
@@ -311,8 +315,11 @@ def handle_plan_review(request_id: str, approve: bool, feedback: str = "") -> st
     with _tracker_lock:
         req["status"] = "approved" if approve else "rejected"
     BUS.send(
-        "lead", req["from"], feedback, "plan_approval_response",
-        {"request_id": request_id, "approve": approve, "feedback": feedback},
+        sender="lead",
+        to=req["from"],
+        content=feedback,
+        msg_type="plan_approval_response",
+        extra={"request_id": request_id, "approve": approve, "feedback": feedback},
     )
     return f"Plan {req['status']} for '{req['from']}'"
 
@@ -328,11 +335,13 @@ TOOL_HANDLERS = {
     "read_file":         lambda **kw: run_read(kw["path"], kw.get("limit")),
     "write_file":        lambda **kw: run_write(kw["path"], kw["content"]),
     "edit_file":         lambda **kw: run_edit(kw["path"], kw["old_text"], kw["new_text"]),
+
     "spawn_teammate":    lambda **kw: TEAM.spawn(kw["name"], kw["role"], kw["prompt"]),
     "list_teammates":    lambda **kw: TEAM.list_all(),
     "send_message":      lambda **kw: BUS.send("lead", kw["to"], kw["content"], kw.get("msg_type", "message")),
     "read_inbox":        lambda **kw: json.dumps(BUS.read_inbox("lead"), indent=2),
     "broadcast":         lambda **kw: BUS.broadcast("lead", kw["content"], TEAM.member_names()),
+
     "shutdown_request":  lambda **kw: handle_shutdown_request(kw["teammate"]),
     "shutdown_response": lambda **kw: _check_shutdown_status(kw.get("request_id", "")),
     "plan_approval":     lambda **kw: handle_plan_review(kw["request_id"], kw["approve"], kw.get("feedback", "")),
@@ -347,6 +356,7 @@ TOOLS = [
      "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]}},
     {"name": "edit_file", "description": "Replace exact text in file.",
      "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "old_text": {"type": "string"}, "new_text": {"type": "string"}}, "required": ["path", "old_text", "new_text"]}},
+
     {"name": "spawn_teammate", "description": "Spawn a persistent teammate.",
      "input_schema": {"type": "object", "properties": {"name": {"type": "string"}, "role": {"type": "string"}, "prompt": {"type": "string"}}, "required": ["name", "role", "prompt"]}},
     {"name": "list_teammates", "description": "List all teammates.",
@@ -357,6 +367,7 @@ TOOLS = [
      "input_schema": {"type": "object", "properties": {}}},
     {"name": "broadcast", "description": "Send a message to all teammates.",
      "input_schema": {"type": "object", "properties": {"content": {"type": "string"}}, "required": ["content"]}},
+
     {"name": "shutdown_request", "description": "Request a teammate to shut down gracefully. Returns a request_id for tracking.",
      "input_schema": {"type": "object", "properties": {"teammate": {"type": "string"}}, "required": ["teammate"]}},
     {"name": "shutdown_response", "description": "Check the status of a shutdown request by request_id.",
@@ -367,8 +378,10 @@ TOOLS = [
 
 
 def agent_loop(messages: list):
+    turn = 1
     while True:
-        print_messages(messages, title="agent_loop")
+        print_messages(messages, title=f"agent_loop: {turn}")
+        turn += 1
         inbox = BUS.read_inbox("lead")
         if inbox:
             messages.append({
@@ -393,13 +406,14 @@ def agent_loop(messages: list):
                     output = handler(**block.input) if handler else f"Unknown tool: {block.name}"
                 except Exception as e:
                     output = f"Error: {e}"
-                print(f"> agent_loop_tool_use:[{block.name}]: {str(output)[:200]}")
+                print(f"> agent_loop_tool_use-{turn}:[{block.name}]: {str(output)[:200]}")
                 results.append({
                     "type": "tool_result",
                     "tool_use_id": block.id,
                     "content": str(output),
                 })
         messages.append({"role": "user", "content": results})
+    print_messages(messages, title=f"agent_loop: {turn}")
 
 
 if __name__ == "__main__":

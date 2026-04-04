@@ -105,7 +105,7 @@ class MessageBus:
         for line in inbox_path.read_text().strip().splitlines():
             if line:
                 messages.append(json.loads(line))
-        inbox_path.write_text("")
+        inbox_path.write_text("") # drain after read
         return messages
 
     def broadcast(self, sender: str, content: str, teammates: list) -> str:
@@ -192,7 +192,7 @@ class TeammateManager:
             for block in response.content:
                 if block.type == "tool_use":
                     output = self._exec(name, block.name, block.input)
-                    print(f"  _teammate_loop_tool_user:[{name}] {block.name}: {str(output)[:120]}")
+                    print(f"  _teammate_loop_tool_user:[{name}-{turn}] {block.name}: {str(output)[:120]}")
                     results.append({
                         "type": "tool_result",
                         "tool_use_id": block.id,
@@ -272,10 +272,12 @@ TOOLS = [
      "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]}},
     {"name": "edit_file", "description": "Replace exact text in file.",
      "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "old_text": {"type": "string"}, "new_text": {"type": "string"}}, "required": ["path", "old_text", "new_text"]}},
+
     {"name": "spawn_teammate", "description": "Spawn a persistent teammate that runs in its own thread.",
      "input_schema": {"type": "object", "properties": {"name": {"type": "string"}, "role": {"type": "string"}, "prompt": {"type": "string"}}, "required": ["name", "role", "prompt"]}},
     {"name": "list_teammates", "description": "List all teammates with name, role, status.",
      "input_schema": {"type": "object", "properties": {}}},
+
     {"name": "send_message", "description": "Send a message to a teammate's inbox.",
      "input_schema": {"type": "object", "properties": {"to": {"type": "string"}, "content": {"type": "string"}, "msg_type": {"type": "string", "enum": list(VALID_MSG_TYPES)}}, "required": ["to", "content"]}},
     {"name": "read_inbox", "description": "Read and drain the lead's inbox.",
@@ -286,8 +288,10 @@ TOOLS = [
 
 
 def agent_loop(messages: list):
+    turn = 1
     while True:
-        print_messages(messages, title="agent_loop")
+        print_messages(messages, title=f"agent_loop: {turn}")
+        turn += 1
         inbox = BUS.read_inbox("lead")
         if inbox:
             messages.append({
@@ -312,14 +316,14 @@ def agent_loop(messages: list):
                     output = handler(**block.input) if handler else f"Unknown tool: {block.name}"
                 except Exception as e:
                     output = f"Error: {e}"
-                print(f"> {block.name}:")
-                print(str(output)[:200])
+                print(f"> agent_loop_tool_use:[{block.name}]: {str(output)[:200]}")
                 results.append({
                     "type": "tool_result",
                     "tool_use_id": block.id,
                     "content": str(output),
                 })
         messages.append({"role": "user", "content": results})
+    print_messages(messages, title=f"agent_loop: {turn}")
 
 
 if __name__ == "__main__":

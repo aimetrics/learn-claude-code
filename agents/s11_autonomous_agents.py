@@ -45,7 +45,7 @@ from pathlib import Path
 from anthropic import Anthropic
 from dotenv import load_dotenv
 from tools import WORKDIR, run_bash, run_read, run_write, run_edit
-from utils import print_messages, VALID_MSG_TYPES
+from utils import VALID_MSG_TYPES
 
 load_dotenv(override=True)
 if os.getenv("ANTHROPIC_BASE_URL"):
